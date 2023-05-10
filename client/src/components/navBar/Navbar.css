@@ -1,0 +1,18 @@
+.NavBar{
+    margin: 15px 0px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    align-self: start;
+}
+
+#logo{
+    width: 15rem;
+    cursor: pointer;
+}
+
+#party_game{
+    font-size: 3em;
+    margin: 0px 10px; 
+    cursor: pointer;
+}
