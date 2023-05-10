@@ -259,3 +259,5 @@ const PORT = process.env.PORT || 8000;
 http.listen(PORT, () => {
     console.log('Backend Server listing at PORT:', PORT);
 })
+
+module.exports = app;
