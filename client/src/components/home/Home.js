@@ -1,7 +1,7 @@
-import React, { useState, useContext} from 'react'
+import React, { useState, useContext } from 'react'
 import "./Home.css";
 import { UserContext } from "../../UserContext";
-import { useHistory,  Redirect } from "react-router-dom";
+import { useHistory, Redirect } from "react-router-dom";
 import serverURL from '../../constant'
 const axios = require('axios');
 
@@ -28,16 +28,18 @@ const Home = () => {
 
         axios(options)
             .then(res => {
-                // console.log(res);
-                if (res.data.err){
+                console.log(res);
+                if (res.data.err) {
                     setError(res.data.err);
-                }else if (res.data.doc){
+                    console.log('error');
+                } else if (res.data.doc) {
+                    console.log('not error');
                     browserHistory.push('/play/' + room_id)
                 }
             });
 
     }
-    
+
     //Programitically navigate Using React-Router-Dom
     const browserHistory = useHistory();
 
@@ -48,14 +50,14 @@ const Home = () => {
         })
     }
 
-    if (user === null  ){
-        return <Redirect to="/nickname"/>
+    if (user === null) {
+        return <Redirect to="/nickname" />
     }
 
     return (
         <div className="home-container">
             <h1 className='welcome' >🔥 Welcome {user ? user.name : ''} 🔥 </h1>
-            <div className="error" style={{display: !error?'none':'flex'}} >{error}</div>
+            <div className="error" style={{ display: !error ? 'none' : 'flex' }} >{error}</div>
             <form onSubmit={joinRoom} id="room-form">
                 <input
                     type="text"
@@ -64,8 +66,8 @@ const Home = () => {
                     id="join Room"
                     placeholder='Enter Room ID' />
                 <button className="input-button">Join Room</button>
-            </form>            
-            <div style={{fontSize: "1rem"}}>OR</div>
+            </form>
+            <div style={{ fontSize: "1rem" }}>OR</div>
             <button className="input-button" onClick={genereateUniqueID}>Create Room</button>
         </div>
     )

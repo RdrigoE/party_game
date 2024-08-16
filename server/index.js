@@ -1,31 +1,18 @@
-const fs = require('fs');
-require('dotenv').config()
+import { selectRandomTopic, chooseTwoValues } from './helpers/helpers.js';
+import express from 'express';
+import cors from "cors";
+import bp from 'body-parser'
+import RoomRepository from './repositories/room.js';
+import { config } from 'dotenv';
+import { createServer } from 'http';
+import { Server } from "socket.io";
 
 
-function selectRandomTopic(filename) {
-    const data = fs.readFileSync(filename, 'utf8');
-    const topics = JSON.parse(data).topics;
-    const randomIndex = Math.floor(Math.random() * topics.length);
-    return topics[randomIndex];
-}
+config()
 
-function chooseTwoValues(elemList) {
-    let elem1;
-    let elem2;
-    const first_pos = Math.floor(Math.random() * elemList.length)
-    elem1 = elemList[first_pos];
-    do {
-        const second_pos = Math.floor(Math.random() * elemList.length)
-        elem2 = elemList[second_pos];
-    } while (elem1 === elem2);
-    return { first: elem1, second: elem2 }
-
-}
-
-const express = require('express')
 const app = express();
-const http = require('http').createServer(app);
-const io = require('socket.io')(http, {
+const http = createServer(app);
+const io = new Server(http, {
     allowEIO3: true,
     cors: {
         origin: process.env.origin,
@@ -33,68 +20,32 @@ const io = require('socket.io')(http, {
         credentials: true,
     }
 })
-
-//Using CORS policy
-const cors = require("cors");
 const corsOptions = {
     origin: process.env.origin,
     credentials: true,
 }
 app.use(cors(corsOptions));
 
-const bodyParser = require('body-parser');
-var jsonParser = bodyParser.json()
+var jsonParser = bp.json()
 
-// Using Node.js `require()`FOR mongoDB
-const mongoose = require('mongoose');
-// configure mongoDB
-const mongoDB = process.env.mongoose_url
-//connect local database 
-mongoose.connect(mongoDB, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log('Database Connected...'))
-    .catch(err => console.log('Error connecting database', err));
-
-
-const Room = require('./models/Room');
-
+let RoomRepo = new RoomRepository();
 
 //post request to join room
 app.post('/join_room', jsonParser, async (req, res) => {
     //check if the room which this exist or not
+    /** @var {string} room_id */
     const room_id = req.body.room_id;
-    const curr_room = await Room.findOne({ room_id: room_id })
-        .catch((err) => {
-            console.log('error occured while checking room', err)
-        });
-
+    const curr_room = RoomRepo.findById(room_id)
     if (curr_room) {
-        // check if room has less than 2 user
-        const doc = await curr_room.save();
-        res.status(200).json({ doc });
+        res.status(200).json({ doc: curr_room });
     } else {
         res.status(200).json({ err: "Enter Valid Room ID" })
     }
 })
 
 app.get('/create_room', (_, res) => {
-    //Generating unique id for each room
-    var alphabet = ['a', 'b', 'c', 'd', 'e', 'f', 'g',
-        'h', 'i', 'j', 'k', 'l', 'm', 'n',
-        'o', 'p', 'q', 'r', 's', 't', 'u',
-        'v', 'w', 'x', 'y', 'z'];
-
-    let result = "";
-    for (let index = 0; index < 5; index++) {
-        result += alphabet[Math.floor(Math.random() * 10000) % 25];
-    }
-    //Saving newly creted roomt to database
-    const room = new Room({ room_id: result, users: [] });
-    room.save().then(() => {
-        console.log('room created', result);
-    }).catch((err) => {
-        console.log('err creating room', err);
-    })
-    res.json(result);
+    let room = RoomRepo.create()
+    res.json(room.uid);
 })
 
 //Sample Request
@@ -109,50 +60,22 @@ io.on('connection', (socket) => {
     // user join register room_id 
     socket.on('join', async (room_id, player) => {
         socket.join(room_id);
-        let room;
-        console.log(player)
-        try {
-            room = await Room.findOneAndUpdate(
-                { room_id: room_id },
-                { $push: { users: player } },
-                { new: true }
-            ).exec();
-        } catch (err) {
-            console.log(err);
-        }
-        console.log(room.users)
-        if (room) {
-            io.to(room_id).emit('playersChange', room.users);
-        }
+        let room = RoomRepo.addPlayer(room_id, player)
+        io.to(room_id).emit('playersChange', room.users);
     })
 
     socket.on('playerRemoved', async (room_id, player) => {
-        let room;
-        try {
-            room = await Room.findOneAndUpdate(
-                { room_id: room_id },
-                { $pull: { users: { id: player.id } } },
-                { new: true }
-            ).exec();
-        } catch (err) {
-            console.log(err);
-        }
-        console.log(room.users)
+        let room = RoomRepo.removePlayer(room_id, player)
         io.to(room_id).emit('playersChange', room.users);
-    }) // respond to a player being removed from a lobby
-    // socket.on('gameStarted', { roundId, players, room }) // respond to a game starting
-
-
+    })
 
     socket.on('roundWordSet', (room) => {
         io.to(room).emit('newWord', selectRandomTopic("topics.json"));
     }) // respond to a random word being set for a round
 
-
-
     socket.on('roundPlayersSet', async (room_id) => {
         let players;
-        const room = await Room.findOne({ room_id: room_id })
+        const room = RoomRepo.findById(room_id)
         const users = room.users;
         players = users.map(user => ({
             id: user.id,
@@ -174,7 +97,7 @@ io.on('connection', (socket) => {
 
     socket.on('updatePlayers', async (room_id) => {
         let players;
-        const room = await Room.findOne({ room_id: room_id })
+        const room = RoomRepo.findById(room_id)
         const users = room.users;
         players = users.map(user => ({
             id: user.id,
@@ -194,10 +117,7 @@ io.on('connection', (socket) => {
             io.to(room_id).emit('winner', players.player_1, players.player_2);
             try {
                 const newScore = players.player_1.score + 100
-                await Room.updateOne(
-                    { room_id: room_id, 'users.id': players.player_1.id },
-                    { $set: { 'users.$.score': newScore } }, { new: true }
-                );
+                RoomRepo.updatePlayerScore(room_id, player_1, newScore);
             } catch (error) {
                 console.error(error);
             }
@@ -205,29 +125,20 @@ io.on('connection', (socket) => {
             io.to(room_id).emit('winner', players.player_2, players.player_1);
             try {
                 const newScore = players.player_2.score + 100
-                await Room.updateOne(
-                    { room_id: room_id, 'users.id': players.player_2.id },
-                    { $set: { 'users.$.score': newScore } }, { new: true }
-                );
+                RoomRepo.updatePlayerScore(room_id, player_2, newScore);
             } catch (error) {
                 console.error(error);
             }
         } else {
             try {
                 const newScore = players.player_1.score + 50
-                await Room.updateOne(
-                    { room_id: room_id, 'users.id': players.player_1.id },
-                    { $set: { 'users.$.score': newScore } }, { new: true }
-                );
+                RoomRepo.updatePlayerScore(room_id, player_1, newScore);
             } catch (error) {
                 console.error(error);
             }
             try {
                 const newScore = players.player_2.score + 50
-                await Room.updateOne(
-                    { room_id: room_id, 'users.id': players.player_2.id },
-                    { $set: { 'users.$.score': newScore } }, { new: true }
-                );
+                RoomRepo.updatePlayerScore(room_id, player_2, newScore);
             } catch (error) {
                 console.error(error);
             }
@@ -235,8 +146,6 @@ io.on('connection', (socket) => {
         }
     }) // respond to a vote being registered for a player
     // socket.on('scores', { scores }) //respond to a request for scores
-
-
 
     //incoming message from chat.js
     socket.on('sendMessage', async ({ message, name, user_id, room_id }) => {
@@ -246,11 +155,8 @@ io.on('connection', (socket) => {
             room_id,
             text: message
         }
-
         io.to(room_id).emit('messageReceived', msgToStore);
     })
-
-
 })
 
 
@@ -260,4 +166,4 @@ http.listen(PORT, () => {
     console.log('Backend Server listing at PORT:', PORT);
 })
 
-module.exports = app;
+export default app;
